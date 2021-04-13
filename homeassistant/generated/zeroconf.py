@@ -54,9 +54,23 @@ ZEROCONF = {
             "domain": "elgato"
         }
     ],
+    "_enphase-envoy._tcp.local.": [
+        {
+            "domain": "enphase_envoy"
+        }
+    ],
     "_esphomelib._tcp.local.": [
         {
             "domain": "esphome"
+        },
+        {
+            "domain": "zha",
+            "name": "tube*"
+        }
+    ],
+    "_fbx-api._tcp.local.": [
+        {
+            "domain": "freebox"
         }
     ],
     "_googlecast._tcp.local.": [
@@ -88,6 +102,17 @@ ZEROCONF = {
     "_ipps._tcp.local.": [
         {
             "domain": "ipp"
+        }
+    ],
+    "_kizbox._tcp.local.": [
+        {
+            "domain": "somfy",
+            "name": "gateway*"
+        }
+    ],
+    "_leap._tcp.local.": [
+        {
+            "domain": "lutron_caseta"
         }
     ],
     "_mediaremotetv._tcp.local.": [
@@ -173,10 +198,12 @@ HOMEKIT = {
     "PowerView": "hunterdouglas_powerview",
     "Presence": "netatmo",
     "Rachio": "rachio",
+    "Smart Bridge": "lutron_caseta",
     "Socket": "wemo",
     "TRADFRI": "tradfri",
     "Welcome": "netatmo",
     "Wemo": "wemo",
     "iSmartGate": "gogogate2",
+    "iZone": "izone",
     "tado": "tado"
 }

@@ -19,17 +19,19 @@ from homeassistant.components.binary_sensor import DOMAIN as BINARY_SENSOR_DOMAI
 from homeassistant.config_entries import SOURCE_ZEROCONF
 from homeassistant.const import (
     CONF_HOST,
-    CONF_MAC,
     CONF_NAME,
     CONF_PASSWORD,
     CONF_PORT,
     CONF_USERNAME,
+    STATE_OFF,
     STATE_ON,
+    STATE_UNAVAILABLE,
 )
 
 from tests.common import MockConfigEntry, async_fire_mqtt_message
 
-MAC = "00408C12345"
+MAC = "00408C123456"
+FORMATTED_MAC = "00:40:8c:12:34:56"
 MODEL = "model"
 NAME = "name"
 
@@ -42,7 +44,6 @@ ENTRY_CONFIG = {
     CONF_USERNAME: "root",
     CONF_PASSWORD: "pass",
     CONF_PORT: 80,
-    CONF_MAC: MAC,
     CONF_MODEL: MODEL,
     CONF_NAME: NAME,
 }
@@ -80,7 +81,7 @@ BASIC_DEVICE_INFO_RESPONSE = {
         "propertyList": {
             "ProdNbr": "M1065-LW",
             "ProdType": "Network Camera",
-            "SerialNumber": "00408C12345",
+            "SerialNumber": MAC,
             "Version": "9.80.1",
         }
     },
@@ -170,7 +171,7 @@ root.IOPort.I0.Input.Trig=closed
 root.Output.NbrOfOutputs=0
 """
 
-PROPERTIES_RESPONSE = """root.Properties.API.HTTP.Version=3
+PROPERTIES_RESPONSE = f"""root.Properties.API.HTTP.Version=3
 root.Properties.API.Metadata.Metadata=yes
 root.Properties.API.Metadata.Version=1.0
 root.Properties.EmbeddedDevelopment.Version=2.16
@@ -181,7 +182,7 @@ root.Properties.Image.Format=jpeg,mjpeg,h264
 root.Properties.Image.NbrOfViews=2
 root.Properties.Image.Resolution=1920x1080,1280x960,1280x720,1024x768,1024x576,800x600,640x480,640x360,352x240,320x240
 root.Properties.Image.Rotation=0,180
-root.Properties.System.SerialNumber=00408C12345
+root.Properties.System.SerialNumber={MAC}
 """
 
 PTZ_RESPONSE = ""
@@ -284,11 +285,12 @@ async def setup_axis_integration(hass, config=ENTRY_CONFIG, options=ENTRY_OPTION
         data=deepcopy(config),
         connection_class=config_entries.CONN_CLASS_LOCAL_PUSH,
         options=deepcopy(options),
-        version=2,
+        version=3,
+        unique_id=FORMATTED_MAC,
     )
     config_entry.add_to_hass(hass)
 
-    with patch("axis.rtsp.RTSPClient.start", return_value=True), respx.mock:
+    with respx.mock:
         mock_default_vapix_requests(respx)
         await hass.config_entries.async_setup(config_entry.entry_id)
         await hass.async_block_till_done()
@@ -308,7 +310,7 @@ async def test_device_setup(hass):
     assert device.api.vapix.firmware_version == "9.10.1"
     assert device.api.vapix.product_number == "M1065-LW"
     assert device.api.vapix.product_type == "Network Camera"
-    assert device.api.vapix.serial_number == "00408C12345"
+    assert device.api.vapix.serial_number == "00408C123456"
 
     entry = device.config_entry
 
@@ -321,7 +323,7 @@ async def test_device_setup(hass):
     assert device.host == ENTRY_CONFIG[CONF_HOST]
     assert device.model == ENTRY_CONFIG[CONF_MODEL]
     assert device.name == ENTRY_CONFIG[CONF_NAME]
-    assert device.serial == ENTRY_CONFIG[CONF_MAC]
+    assert device.unique_id == FORMATTED_MAC
 
 
 async def test_device_info(hass):
@@ -336,7 +338,7 @@ async def test_device_info(hass):
     assert device.api.vapix.firmware_version == "9.80.1"
     assert device.api.vapix.product_number == "M1065-LW"
     assert device.api.vapix.product_type == "Network Camera"
-    assert device.api.vapix.serial_number == "00408C12345"
+    assert device.api.vapix.serial_number == "00408C123456"
 
 
 async def test_device_support_mqtt(hass, mqtt_mock):
@@ -378,7 +380,7 @@ async def test_update_address(hass):
             data={
                 "host": "2.3.4.5",
                 "port": 80,
-                "hostname": "name",
+                "name": "name",
                 "properties": {"macaddress": MAC},
             },
             context={"source": SOURCE_ZEROCONF},
@@ -389,12 +391,38 @@ async def test_update_address(hass):
     assert len(mock_setup_entry.mock_calls) == 1
 
 
-async def test_device_unavailable(hass):
+async def test_device_unavailable(hass, mock_rtsp_event, mock_rtsp_signal_state):
     """Successful setup."""
-    config_entry = await setup_axis_integration(hass)
-    device = hass.data[AXIS_DOMAIN][config_entry.unique_id]
-    device.async_connection_status_callback(status=False)
-    assert not device.available
+    await setup_axis_integration(hass)
+
+    # Provide an entity that can be used to verify connection state on
+    mock_rtsp_event(
+        topic="tns1:AudioSource/tnsaxis:TriggerLevel",
+        data_type="triggered",
+        data_value="10",
+        source_name="channel",
+        source_idx="1",
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(f"{BINARY_SENSOR_DOMAIN}.{NAME}_sound_1").state == STATE_OFF
+
+    # Connection to device has failed
+
+    mock_rtsp_signal_state(connected=False)
+    await hass.async_block_till_done()
+
+    assert (
+        hass.states.get(f"{BINARY_SENSOR_DOMAIN}.{NAME}_sound_1").state
+        == STATE_UNAVAILABLE
+    )
+
+    # Connection to device has been restored
+
+    mock_rtsp_signal_state(connected=True)
+    await hass.async_block_till_done()
+
+    assert hass.states.get(f"{BINARY_SENSOR_DOMAIN}.{NAME}_sound_1").state == STATE_OFF
 
 
 async def test_device_reset(hass):
@@ -409,6 +437,16 @@ async def test_device_not_accessible(hass):
     """Failed setup schedules a retry of setup."""
     with patch.object(axis.device, "get_device", side_effect=axis.errors.CannotConnect):
         await setup_axis_integration(hass)
+    assert hass.data[AXIS_DOMAIN] == {}
+
+
+async def test_device_trigger_reauth_flow(hass):
+    """Failed authentication trigger a reauthentication flow."""
+    with patch.object(
+        axis.device, "get_device", side_effect=axis.errors.AuthenticationRequired
+    ), patch.object(hass.config_entries.flow, "async_init") as mock_flow_init:
+        await setup_axis_integration(hass)
+        mock_flow_init.assert_called_once()
     assert hass.data[AXIS_DOMAIN] == {}
 
 

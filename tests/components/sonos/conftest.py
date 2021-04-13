@@ -1,5 +1,5 @@
 """Configuration for Sonos tests."""
-from unittest.mock import Mock, patch as patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch as patch
 
 import pytest
 
@@ -7,7 +7,7 @@ from homeassistant.components.media_player import DOMAIN as MP_DOMAIN
 from homeassistant.components.sonos import DOMAIN
 from homeassistant.const import CONF_HOSTS
 
-from tests.common import MockConfigEntry, load_fixture
+from tests.common import MockConfigEntry
 
 
 @pytest.fixture(name="config_entry")
@@ -31,6 +31,10 @@ def soco_fixture(music_library, speaker_info, dummy_soco_service):
         mock_soco.renderingControl = dummy_soco_service
         mock_soco.zoneGroupTopology = dummy_soco_service
         mock_soco.contentDirectory = dummy_soco_service
+        mock_soco.mute = False
+        mock_soco.night_mode = True
+        mock_soco.dialog_mode = True
+        mock_soco.volume = 19
 
         yield mock_soco
 
@@ -41,6 +45,7 @@ def discover_fixture(soco):
 
     def do_callback(callback, **kwargs):
         callback(soco)
+        return MagicMock()
 
     with patch("pysonos.discover_thread", side_effect=do_callback) as mock:
         yield mock
@@ -56,7 +61,7 @@ def config_fixture():
 def dummy_soco_service_fixture():
     """Create dummy_soco_service fixture."""
     service = Mock()
-    service.subscribe = Mock()
+    service.subscribe = AsyncMock()
     return service
 
 
@@ -77,21 +82,3 @@ def speaker_info_fixture():
         "software_version": "49.2-64250",
         "mac_address": "00-11-22-33-44-55",
     }
-
-
-@pytest.fixture(name="plex_empty_payload", scope="session")
-def plex_empty_payload_fixture():
-    """Load an empty payload and return it."""
-    return load_fixture("plex/empty_payload.xml")
-
-
-@pytest.fixture(name="plextv_account", scope="session")
-def plextv_account_fixture():
-    """Load account info from plex.tv and return it."""
-    return load_fixture("plex/plextv_account.xml")
-
-
-@pytest.fixture(name="plex_sonos_resources", scope="session")
-def plex_sonos_resources_fixture():
-    """Load Sonos resources payload and return it."""
-    return load_fixture("plex/sonos_resources.xml")

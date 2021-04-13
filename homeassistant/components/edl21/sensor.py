@@ -1,4 +1,5 @@
 """Support for EDL21 Smart Meters."""
+from __future__ import annotations
 
 from datetime import timedelta
 import logging
@@ -7,7 +8,7 @@ from sml import SmlGetListResponse
 from sml.asyncio import SmlProtocol
 import voluptuous as vol
 
-from homeassistant.components.sensor import PLATFORM_SCHEMA
+from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity
 from homeassistant.const import CONF_NAME
 from homeassistant.core import callback
 import homeassistant.helpers.config_validation as cv
@@ -15,9 +16,7 @@ from homeassistant.helpers.dispatcher import (
     async_dispatcher_connect,
     async_dispatcher_send,
 )
-from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_registry import async_get_registry
-from homeassistant.helpers.typing import Optional
 from homeassistant.util.dt import utcnow
 
 _LOGGER = logging.getLogger(__name__)
@@ -193,7 +192,7 @@ class EDL21:
         self._async_add_entities(new_entities, update_before_add=True)
 
 
-class EDL21Entity(Entity):
+class EDL21Entity(SensorEntity):
     """Entity reading values from EDL21 telegram."""
 
     def __init__(self, electricity_id, obis, name, telegram):
@@ -259,7 +258,7 @@ class EDL21Entity(Entity):
         return self._obis
 
     @property
-    def name(self) -> Optional[str]:
+    def name(self) -> str | None:
         """Return a name."""
         return self._name
 
@@ -269,7 +268,7 @@ class EDL21Entity(Entity):
         return self._telegram.get("value")
 
     @property
-    def device_state_attributes(self):
+    def extra_state_attributes(self):
         """Enumerate supported attributes."""
         return {
             self._state_attrs[k]: v
